@@ -113,8 +113,8 @@ with aba1:
       descricao = st.text_input("Descrição do compromisso *")
 
     with col2:
-      cnpj = st.text_input(
-          "CNPJ", placeholder="00.000.000/0000-00", max_chars=18
+      cnpj_cpf = st.text_input(
+          "CNPJ/CPF", placeholder="000.000.000-00 / 00.000.000/0000-00", max_chars=18
       )
       contrato_campanha = st.text_input("Nº contrato / campanha")
       data_vencimento = st.date_input("Data de vencimento *")
@@ -145,7 +145,7 @@ with aba1:
             str(data_lancamento),
             gerente_resp,
             codigo_pdv,
-            cnpj,
+            cnpj_cpf,  # Atualizado para CNPJ/CPF
             nome_cliente,
             tipo_comp,
             contrato_campanha,
