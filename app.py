@@ -11,7 +11,7 @@ st.set_page_config(
 )
 
 
-# Conexão com o Google Sheets (sem cache pesado para garantir dados em tempo real)
+# Conexão com o Google Sheets
 def conectar_gsheets():
   scope = [
       "https://spreadsheets.google.com/feeds",
@@ -35,12 +35,18 @@ try:
   sheet_lancamentos = sh.worksheet("Lancamentos")
   sheet_baixas = sh.worksheet("Baixas")
   sheet_params = sh.worksheet("Parametros")
-  st.sidebar.success("✅ Conectado ao Google Sheets em tempo real!")
+  st.sidebar.success("✅ Conectado ao Google Sheets!")
 except Exception as e:
   st.error(
       f"Erro ao conectar com o Google Sheets. Verifique suas secrets. Erro: {e}"
   )
   st.stop()
+
+# Botão na Barra Lateral para Atualizar os Dados manualmente
+st.sidebar.markdown("---")
+if st.sidebar.button("🔄 Atualizar Dados do Sheets"):
+  st.cache_data.clear()
+  st.rerun()
 
 
 # Carregar parâmetros atualizados da planilha
@@ -227,7 +233,6 @@ with aba3:
   if df_lanc.empty or "valor_debito" not in df_lanc.columns:
     st.info("Ainda não há dados cadastrados na planilha.")
   else:
-    # Barra de Filtros na parte superior do Dashboard
     st.markdown("### 🔍 Filtros do Dashboard")
     f_col1, f_col2, f_col3 = st.columns(3)
 
@@ -272,7 +277,6 @@ with aba3:
 
     st.markdown("---")
 
-    # Métricas Principais baseadas nos filtros
     total_debitos = (
         df_filtrado["valor_debito"].astype(float).sum()
         if not df_filtrado.empty
@@ -281,7 +285,6 @@ with aba3:
 
     try:
       df_baixas = pd.DataFrame(sheet_baixas.get_all_records())
-      # Cruzando baixas com os lançamentos filtrados
       if not df_baixas.empty and "id_lancamento" in df_baixas.columns:
         ids_filtrados = df_filtrado["id_lancamento"].tolist()
         df_baixas_filtradas = df_baixas[
