@@ -11,8 +11,7 @@ st.set_page_config(
 )
 
 
-# Conexão com o Google Sheets corrigindo automaticamente a chave privada
-@st.cache_resource
+# Conexão com o Google Sheets (sem cache pesado para garantir dados em tempo real)
 def conectar_gsheets():
   scope = [
       "https://spreadsheets.google.com/feeds",
@@ -20,10 +19,8 @@ def conectar_gsheets():
   ]
   creds_dict = dict(st.secrets["gcp_service_account"])
 
-  # Tratamento robusto para garantir que as quebras de linha da chave funcionem
   if "private_key" in creds_dict:
     key = creds_dict["private_key"]
-    # Substitui barras literais por quebras reais e limpa espaços duplos se houver
     key = key.replace("\\n", "\n")
     creds_dict["private_key"] = key
 
@@ -38,7 +35,7 @@ try:
   sheet_lancamentos = sh.worksheet("Lancamentos")
   sheet_baixas = sh.worksheet("Baixas")
   sheet_params = sh.worksheet("Parametros")
-  st.sidebar.success("✅ Conectado ao Google Sheets com sucesso!")
+  st.sidebar.success("✅ Conectado ao Google Sheets em tempo real!")
 except Exception as e:
   st.error(
       f"Erro ao conectar com o Google Sheets. Verifique suas secrets. Erro: {e}"
@@ -46,15 +43,26 @@ except Exception as e:
   st.stop()
 
 
-# Carregar parâmetros com fallback de segurança
-@st.cache_data(ttl=60)
+# Carregar parâmetros atualizados da planilha
 def carregar_parametros():
   try:
     data = sheet_params.get_all_records()
     df = pd.DataFrame(data)
-    gerentes = df["Gerentes"].dropna().tolist()
-    tipos = df["Tipos_Compromisso"].dropna().tolist()
-    formas = df["Formas_Pagamento"].dropna().tolist()
+    gerentes = (
+        df["Gerentes"].dropna().unique().tolist()
+        if "Gerentes" in df.columns
+        else []
+    )
+    tipos = (
+        df["Tipos_Compromisso"].dropna().unique().tolist()
+        if "Tipos_Compromisso" in df.columns
+        else []
+    )
+    formas = (
+        df["Formas_Pagamento"].dropna().unique().tolist()
+        if "Formas_Pagamento" in df.columns
+        else []
+    )
     return gerentes, tipos, formas
   except Exception:
     return (
@@ -142,7 +150,8 @@ with aba1:
             "Pendente",
         ]
         sheet_lancamentos.append_row(row)
-        st.success(f"Lançamento {next_id} salvo com sucesso!")
+        st.success(f"Lançamento {next_id} salvo e integrado com o Sheets!")
+        st.rerun()
 
 # ==========================================
 # ABA 2: BAIXA (Pagamento)
@@ -207,33 +216,92 @@ with aba2:
           sheet_lancamentos.update_cell(cell.row, 13, "Pago / Parcial")
 
         st.success(f"Pagamento registrado para o lançamento {id_lancamento}!")
+        st.rerun()
 
 # ==========================================
-# ABA 3: DASHBOARD
+# ABA 3: DASHBOARD COM FILTROS AVANÇADOS
 # ==========================================
 with aba3:
-  st.subheader("Painel de Indicadores")
+  st.subheader("Painel de Indicadores e Filtros")
 
   if df_lanc.empty or "valor_debito" not in df_lanc.columns:
     st.info("Ainda não há dados cadastrados na planilha.")
   else:
-    total_debitos = df_lanc["valor_debito"].astype(float).sum()
+    # Barra de Filtros na parte superior do Dashboard
+    st.markdown("### 🔍 Filtros do Dashboard")
+    f_col1, f_col2, f_col3 = st.columns(3)
+
+    with f_col1:
+      gerentes_disponiveis = (
+          ["Todos"] + df_lanc["gerente"].dropna().unique().tolist()
+          if "gerente" in df_lanc.columns
+          else ["Todos"]
+      )
+      filtro_gerente = st.selectbox("Filtrar por Gerente", gerentes_disponiveis)
+
+    with f_col2:
+      tipos_disponiveis = (
+          ["Todos"] + df_lanc["tipo_compromisso"].dropna().unique().tolist()
+          if "tipo_compromisso" in df_lanc.columns
+          else ["Todos"]
+      )
+      filtro_tipo = st.selectbox(
+          "Filtrar por Tipo de Compromisso", tipos_disponiveis
+      )
+
+    with f_col3:
+      clientes_disponiveis = (
+          ["Todos"] + df_lanc["nome_cliente"].dropna().unique().tolist()
+          if "nome_cliente" in df_lanc.columns
+          else ["Todos"]
+      )
+      filtro_cliente = st.selectbox(
+          "Filtrar por Nome do Cliente", clientes_disponiveis
+      )
+
+    # Aplicando os filtros no DataFrame
+    df_filtrado = df_lanc.copy()
+    if filtro_gerente != "Todos":
+      df_filtrado = df_filtrado[df_filtrado["gerente"] == filtro_gerente]
+    if filtro_tipo != "Todos":
+      df_filtrado = df_filtrado[
+          df_filtrado["tipo_compromisso"] == filtro_tipo
+      ]
+    if filtro_cliente != "Todos":
+      df_filtrado = df_filtrado[df_filtrado["nome_cliente"] == filtro_cliente]
+
+    st.markdown("---")
+
+    # Métricas Principais baseadas nos filtros
+    total_debitos = (
+        df_filtrado["valor_debito"].astype(float).sum()
+        if not df_filtrado.empty
+        else 0
+    )
 
     try:
       df_baixas = pd.DataFrame(sheet_baixas.get_all_records())
-      total_pago = (
-          df_baixas["valor_pago"].astype(float).sum()
-          if not df_baixas.empty and "valor_pago" in df_baixas.columns
-          else 0.0
-      )
+      # Cruzando baixas com os lançamentos filtrados
+      if not df_baixas.empty and "id_lancamento" in df_baixas.columns:
+        ids_filtrados = df_filtrado["id_lancamento"].tolist()
+        df_baixas_filtradas = df_baixas[
+            df_baixas["id_lancamento"].isin(ids_filtrados)
+        ]
+        total_pago = df_baixas_filtradas["valor_pago"].astype(float).sum()
+      else:
+        total_pago = 0.0
     except Exception:
       total_pago = 0.0
 
     saldo_aberto = total_debitos - total_pago
 
     col_m1, col_m2, col_m3 = st.columns(3)
-    col_m1.metric("TOTAL DE DÉBITOS CADASTRADOS", f"R$ {total_debitos:,.2f}")
-    col_m2.metric("TOTAL PAGO", f"R$ {total_pago:,.2f}")
+    col_m1.metric(
+        "TOTAL DE DÉBITOS (FILTRADO)",
+        f"R$ {total_debitos:,.2f}",
+        delta=f"{len(df_filtrado)} registros",
+    )
+    col_m2.metric("TOTAL PAGO (FILTRADO)", f"R$ {total_pago:,.2f}")
     col_m3.metric("SALDO TOTAL EM ABERTO", f"R$ {saldo_aberto:,.2f}")
 
     st.markdown("---")
@@ -242,9 +310,9 @@ with aba3:
 
     with col_g1:
       st.markdown("### Por Tipo de Compromisso")
-      if "tipo_compromisso" in df_lanc.columns:
+      if not df_filtrado.empty and "tipo_compromisso" in df_filtrado.columns:
         resumo_tipo = (
-            df_lanc.groupby("tipo_compromisso")["valor_debito"]
+            df_filtrado.groupby("tipo_compromisso")["valor_debito"]
             .sum()
             .reset_index()
         )
@@ -258,9 +326,9 @@ with aba3:
 
     with col_g2:
       st.markdown("### Distribuição por Gerente")
-      if "gerente" in df_lanc.columns:
+      if not df_filtrado.empty and "gerente" in df_filtrado.columns:
         resumo_gerente = (
-            df_lanc.groupby("gerente")["valor_debito"].sum().reset_index()
+            df_filtrado.groupby("gerente")["valor_debito"].sum().reset_index()
         )
         fig_gerente = px.pie(
             resumo_gerente,
@@ -270,5 +338,5 @@ with aba3:
         )
         st.plotly_chart(fig_gerente, use_container_width=True)
 
-    st.markdown("### Base Completa de Lançamentos")
-    st.dataframe(df_lanc, use_container_width=True)
+    st.markdown("### Base de Lançamentos Filtrados")
+    st.dataframe(df_filtrado, use_container_width=True)
