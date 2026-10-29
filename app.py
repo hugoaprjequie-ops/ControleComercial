@@ -111,11 +111,15 @@ with aba1:
           "Tipo de compromisso *", ["Selecione..."] + tipos_list
       )
 
-      # Campo condicional exibido se for BL ou Ação
+      # Verificação flexível para exibir o mês do BL ou Ação
+      tipo_lower = tipo_comp.lower() if tipo_comp else ""
+      precisa_mes = any(
+          termo in tipo_lower
+          for termo in ["bl", "ação", "acao", "bateu", "levou"]
+      )
+
       mes_bl_acao = ""
-      if tipo_comp != "Selecione..." and (
-          "bl" in tipo_comp.lower() or "ação" in tipo_comp.lower()
-      ):
+      if tipo_comp != "Selecione..." and precisa_mes:
         mes_bl_acao = st.text_input(
             "Mês do BL / Ação *", placeholder="Ex: Janeiro/2026 ou 01/2026"
         )
@@ -136,11 +140,6 @@ with aba1:
     submitted = st.form_submit_button("Salvar lançamento")
 
     if submitted:
-      # Validação se o campo condicional foi preenchido quando visível
-      precisa_mes = tipo_comp != "Selecione..." and (
-          "bl" in tipo_comp.lower() or "ação" in tipo_comp.lower()
-      )
-
       if (
           gerente_resp == "Selecione..."
           or tipo_comp == "Selecione..."
@@ -170,7 +169,7 @@ with aba1:
             float(valor_debito),
             observacoes,
             "Pendente",
-            mes_bl_acao,  # Salva a informação do mês do BL/Ação na planilha
+            mes_bl_acao,
         ]
         sheet_lancamentos.append_row(row)
         st.success(f"Lançamento {next_id} salvo e integrado com o Sheets!")
@@ -282,7 +281,6 @@ with aba3:
       )
 
     with f_col4:
-      # Extraindo o mês/ano da data de lançamento para o filtro
       if "data_lancamento" in df_lanc.columns:
         df_lanc["mes_ano_lancamento"] = pd.to_datetime(
             df_lanc["data_lancamento"], errors="coerce"
