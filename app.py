@@ -1,9 +1,9 @@
 from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-pandas as pd
-plotly.express as px
-streamlit as st
+import pandas as pd
+import plotly.express as px
+import streamlit as st
 
 # Configuração da Página
 st.set_page_config(
