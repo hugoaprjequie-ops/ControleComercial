@@ -90,90 +90,97 @@ aba1, aba2, aba3 = st.tabs(
 )
 
 # ==========================================
-# ABA 1: LANÇAMENTO
+# ABA 1: LANÇAMENTO (Sem st.form para atualizar instantaneamente)
 # ==========================================
 with aba1:
   st.subheader("Novo lançamento (débito)")
 
-  with st.form("form_lancamento", clear_on_submit=True):
-    col1, col2 = st.columns(2)
+  col1, col2 = st.columns(2)
 
-    with col1:
-      data_lancamento = st.date_input(
-          "Data do lançamento *", value=datetime.today()
+  with col1:
+    data_lancamento = st.date_input(
+        "Data do lançamento *", value=datetime.today(), key="l_data"
+    )
+    gerente_resp = st.selectbox(
+        "Gerente responsável *", ["Selecione..."] + gerentes_list, key="l_gerente"
+    )
+    codigo_pdv = st.text_input("Código do cliente (PDV) *", key="l_pdv")
+    nome_cliente = st.text_input("Nome do cliente *", key="l_cliente")
+    tipo_comp = st.selectbox(
+        "Tipo de compromisso *", ["Selecione..."] + tipos_list, key="l_tipo"
+    )
+
+    # Este campo aparece instantaneamente ao selecionar BL ou Ação
+    tipo_lower = tipo_comp.lower() if tipo_comp else ""
+    precisa_mes = any(
+        termo in tipo_lower
+        for termo in ["bl", "ação", "acao", "bateu", "levou"]
+    )
+
+    mes_bl_acao = ""
+    if tipo_comp != "Selecione..." and precisa_mes:
+      mes_bl_acao = st.text_input(
+          "Mês do BL / Ação *",
+          placeholder="Ex: Janeiro/2026 ou 01/2026",
+          key="l_mes_bl",
       )
-      gerente_resp = st.selectbox(
-          "Gerente responsável *", ["Selecione..."] + gerentes_list
+
+    descricao = st.text_input("Descrição do compromisso *", key="l_desc")
+
+  with col2:
+    cnpj_cpf = st.text_input(
+        "CNPJ/CPF",
+        placeholder="000.000.000-00 / 00.000.000/0000-00",
+        max_chars=18,
+        key="l_cnpj",
+    )
+    contrato_campanha = st.text_input("Nº contrato / campanha", key="l_contrato")
+    data_vencimento = st.date_input(
+        "Data de vencimento *", value=datetime.today(), key="l_venc"
+    )
+    valor_debito = st.number_input(
+        "Valor total do débito (R$) *", min_value=0.0, format="%.2f", key="l_val"
+    )
+    observacoes = st.text_area("Observações", key="l_obs")
+
+  st.markdown("")
+  submitted = st.button("Salvar lançamento")
+
+  if submitted:
+    if (
+        gerente_resp == "Selecione..."
+        or tipo_comp == "Selecione..."
+        or not codigo_pdv
+        or not nome_cliente
+        or not descricao
+        or (precisa_mes and not mes_bl_acao)
+    ):
+      st.error(
+          "Por favor, preencha todos os campos obrigatórios marcados com * (incluindo o Mês do BL/Ação)."
       )
-      codigo_pdv = st.text_input("Código do cliente (PDV) *")
-      nome_cliente = st.text_input("Nome do cliente *")
-      tipo_comp = st.selectbox(
-          "Tipo de compromisso *", ["Selecione..."] + tipos_list
-      )
+    else:
+      existing_data = sheet_lancamentos.get_all_records()
+      next_id = f"LAN-{len(existing_data) + 1:05d}"
 
-      # Verificação flexível para exibir o mês do BL ou Ação
-      tipo_lower = tipo_comp.lower() if tipo_comp else ""
-      precisa_mes = any(
-          termo in tipo_lower
-          for termo in ["bl", "ação", "acao", "bateu", "levou"]
-      )
-
-      mes_bl_acao = ""
-      if tipo_comp != "Selecione..." and precisa_mes:
-        mes_bl_acao = st.text_input(
-            "Mês do BL / Ação *", placeholder="Ex: Janeiro/2026 ou 01/2026"
-        )
-
-      descricao = st.text_input("Descrição do compromisso *")
-
-    with col2:
-      cnpj_cpf = st.text_input(
-          "CNPJ/CPF", placeholder="000.000.000-00 / 00.000.000/0000-00", max_chars=18
-      )
-      contrato_campanha = st.text_input("Nº contrato / campanha")
-      data_vencimento = st.date_input("Data de vencimento *")
-      valor_debito = st.number_input(
-          "Valor total do débito (R$) *", min_value=0.0, format="%.2f"
-      )
-      observacoes = st.text_area("Observações")
-
-    submitted = st.form_submit_button("Salvar lançamento")
-
-    if submitted:
-      if (
-          gerente_resp == "Selecione..."
-          or tipo_comp == "Selecione..."
-          or not codigo_pdv
-          or not nome_cliente
-          or not descricao
-          or (precisa_mes and not mes_bl_acao)
-      ):
-        st.error(
-            "Por favor, preencha todos os campos obrigatórios marcados com * (incluindo o Mês do BL/Ação)."
-        )
-      else:
-        existing_data = sheet_lancamentos.get_all_records()
-        next_id = f"LAN-{len(existing_data) + 1:05d}"
-
-        row = [
-            next_id,
-            str(data_lancamento),
-            gerente_resp,
-            codigo_pdv,
-            cnpj_cpf,
-            nome_cliente,
-            tipo_comp,
-            contrato_campanha,
-            descricao,
-            str(data_vencimento),
-            float(valor_debito),
-            observacoes,
-            "Pendente",
-            mes_bl_acao,
-        ]
-        sheet_lancamentos.append_row(row)
-        st.success(f"Lançamento {next_id} salvo e integrado com o Sheets!")
-        st.rerun()
+      row = [
+          next_id,
+          str(data_lancamento),
+          gerente_resp,
+          codigo_pdv,
+          cnpj_cpf,
+          nome_cliente,
+          tipo_comp,
+          contrato_campanha,
+          descricao,
+          str(data_vencimento),
+          float(valor_debito),
+          observacoes,
+          "Pendente",
+          mes_bl_acao,
+      ]
+      sheet_lancamentos.append_row(row)
+      st.success(f"Lançamento {next_id} salvo e integrado com o Sheets!")
+      st.rerun()
 
 # ==========================================
 # ABA 2: BAIXA (Pagamento)
@@ -186,59 +193,59 @@ with aba2:
   except Exception:
     df_lanc = pd.DataFrame()
 
-  with st.form("form_baixa", clear_on_submit=True):
-    col1, col2 = st.columns(2)
+  col1, col2 = st.columns(2)
 
-    with col1:
-      id_opcoes = (
-          df_lanc["id_lancamento"].tolist()
-          if not df_lanc.empty and "id_lancamento" in df_lanc.columns
-          else []
-      )
-      id_lancamento = st.selectbox(
-          "ID do lançamento *", options=["Selecione..."] + id_opcoes
-      )
-      data_pagamento = st.date_input(
-          "Data do pagamento *", value=datetime.today()
-      )
-      forma_pag = st.selectbox(
-          "Forma de pagamento", ["Selecione..."] + formas_list
-      )
+  with col1:
+    id_opcoes = (
+        df_lanc["id_lancamento"].tolist()
+        if not df_lanc.empty and "id_lancamento" in df_lanc.columns
+        else []
+    )
+    id_lancamento = st.selectbox(
+        "ID do lançamento *", options=["Selecione..."] + id_opcoes, key="b_id"
+    )
+    data_pagamento = st.date_input(
+        "Data do pagamento *", value=datetime.today(), key="b_data"
+    )
+    forma_pag = st.selectbox(
+        "Forma de pagamento", ["Selecione..."] + formas_list, key="b_forma"
+    )
 
-    with col2:
-      valor_pago = st.number_input(
-          "Valor pago (R$) *", min_value=0.0, format="%.2f"
+  with col2:
+    valor_pago = st.number_input(
+        "Valor pago (R$) *", min_value=0.0, format="%.2f", key="b_val"
+    )
+    comprovante_link = st.text_input(
+        "Comprovante (link)", placeholder="https://...", key="b_link"
+    )
+    obs_baixa = st.text_area("Observações da baixa", key="b_obs")
+
+  st.markdown("")
+  submitted_baixa = st.button("Registrar pagamento")
+
+  if submitted_baixa:
+    if id_lancamento == "Selecione..." or valor_pago <= 0:
+      st.error(
+          "Selecione um ID de lançamento válido e informe um valor pago maior"
+          " que zero."
       )
-      comprovante_link = st.text_input(
-          "Comprovante (link)", placeholder="https://..."
-      )
-      obs_baixa = st.text_area("Observações da baixa")
+    else:
+      row_baixa = [
+          id_lancamento,
+          str(data_pagamento),
+          float(valor_pago),
+          forma_pag if forma_pag != "Selecione..." else "",
+          comprovante_link,
+          obs_baixa,
+      ]
+      sheet_baixas.append_row(row_baixa)
 
-    submitted_baixa = st.form_submit_button("Registrar pagamento")
+      cell = sheet_lancamentos.find(id_lancamento)
+      if cell:
+        sheet_lancamentos.update_cell(cell.row, 13, "Pago / Parcial")
 
-    if submitted_baixa:
-      if id_lancamento == "Selecione..." or valor_pago <= 0:
-        st.error(
-            "Selecione um ID de lançamento válido e informe um valor pago"
-            " maior que zero."
-        )
-      else:
-        row_baixa = [
-            id_lancamento,
-            str(data_pagamento),
-            float(valor_pago),
-            forma_pag if forma_pag != "Selecione..." else "",
-            comprovante_link,
-            obs_baixa,
-        ]
-        sheet_baixas.append_row(row_baixa)
-
-        cell = sheet_lancamentos.find(id_lancamento)
-        if cell:
-          sheet_lancamentos.update_cell(cell.row, 13, "Pago / Parcial")
-
-        st.success(f"Pagamento registrado para o lançamento {id_lancamento}!")
-        st.rerun()
+      st.success(f"Pagamento registrado para o lançamento {id_lancamento}!")
+      st.rerun()
 
 # ==========================================
 # ABA 3: DASHBOARD COM FILTROS AVANÇADOS
@@ -258,7 +265,9 @@ with aba3:
           if "gerente" in df_lanc.columns
           else ["Todos"]
       )
-      filtro_gerente = st.selectbox("Filtrar por Gerente", gerentes_disponiveis)
+      filtro_gerente = st.selectbox(
+          "Filtrar por Gerente", gerentes_disponiveis, key="f_gerente"
+      )
 
     with f_col2:
       tipos_disponiveis = (
@@ -267,7 +276,7 @@ with aba3:
           else ["Todos"]
       )
       filtro_tipo = st.selectbox(
-          "Filtrar por Tipo de Compromisso", tipos_disponiveis
+          "Filtrar por Tipo de Compromisso", tipos_disponiveis, key="f_tipo"
       )
 
     with f_col3:
@@ -277,7 +286,7 @@ with aba3:
           else ["Todos"]
       )
       filtro_cliente = st.selectbox(
-          "Filtrar por Nome do Cliente", clientes_disponiveis
+          "Filtrar por Nome do Cliente", clientes_disponiveis, key="f_cliente"
       )
 
     with f_col4:
@@ -292,7 +301,7 @@ with aba3:
       else:
         meses_disponiveis = ["Todos"]
       filtro_mes = st.selectbox(
-          "Filtrar por Mês de Lançamento", meses_disponiveis
+          "Filtrar por Mês de Lançamento", meses_disponiveis, key="f_mes"
       )
 
     # Aplicando os filtros no DataFrame
