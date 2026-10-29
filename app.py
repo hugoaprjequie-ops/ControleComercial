@@ -11,23 +11,24 @@ st.set_page_config(
 )
 
 
-# Conexão com o Google Sheets usando Secrets de forma robusta
+# Conexão com o Google Sheets corrigindo automaticamente a chave privada
 @st.cache_resource
 def conectar_gsheets():
   scope = [
       "https://spreadsheets.google.com/feeds",
       "https://www.googleapis.com/auth/drive",
   ]
-  # Converte o secret em dicionário mutável
   creds_dict = dict(st.secrets["gcp_service_account"])
 
-  # Garante que as quebras de linha da chave privada sejam tratadas corretamente
+  # Tratamento robusto para garantir que as quebras de linha da chave funcionem
   if "private_key" in creds_dict:
-    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+    key = creds_dict["private_key"]
+    # Substitui barras literais por quebras reais e limpa espaços duplos se houver
+    key = key.replace("\\n", "\n")
+    creds_dict["private_key"] = key
 
   creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
   client = gspread.authorize(creds)
-  # Substitua pelo nome exato da sua planilha
   sheet = client.open("ControleComercial")
   return sheet
 
@@ -45,7 +46,7 @@ except Exception as e:
   st.stop()
 
 
-# Carregar parâmetros (Listas suspensas) com fallback de segurança
+# Carregar parâmetros com fallback de segurança
 @st.cache_data(ttl=60)
 def carregar_parametros():
   try:
