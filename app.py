@@ -11,14 +11,20 @@ st.set_page_config(
 )
 
 
-# Conexão com o Google Sheets usando Secrets
+# Conexão com o Google Sheets usando Secrets de forma robusta
 @st.cache_resource
 def conectar_gsheets():
   scope = [
       "https://spreadsheets.google.com/feeds",
       "https://www.googleapis.com/auth/drive",
   ]
+  # Converte o secret em dicionário mutável
   creds_dict = dict(st.secrets["gcp_service_account"])
+
+  # Garante que as quebras de linha da chave privada sejam tratadas corretamente
+  if "private_key" in creds_dict:
+    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+
   creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
   client = gspread.authorize(creds)
   # Substitua pelo nome exato da sua planilha
@@ -31,6 +37,7 @@ try:
   sheet_lancamentos = sh.worksheet("Lancamentos")
   sheet_baixas = sh.worksheet("Baixas")
   sheet_params = sh.worksheet("Parametros")
+  st.sidebar.success("✅ Conectado ao Google Sheets com sucesso!")
 except Exception as e:
   st.error(
       f"Erro ao conectar com o Google Sheets. Verifique suas secrets. Erro: {e}"
@@ -38,15 +45,22 @@ except Exception as e:
   st.stop()
 
 
-# Carregar parâmetros (Listas suspensas)
+# Carregar parâmetros (Listas suspensas) com fallback de segurança
 @st.cache_data(ttl=60)
 def carregar_parametros():
-  data = sheet_params.get_all_records()
-  df = pd.DataFrame(data)
-  gerentes = df["Gerentes"].dropna().tolist()
-  tipos = df["Tipos_Compromisso"].dropna().tolist()
-  formas = df["Formas_Pagamento"].dropna().tolist()
-  return gerentes, tipos, formas
+  try:
+    data = sheet_params.get_all_records()
+    df = pd.DataFrame(data)
+    gerentes = df["Gerentes"].dropna().tolist()
+    tipos = df["Tipos_Compromisso"].dropna().tolist()
+    formas = df["Formas_Pagamento"].dropna().tolist()
+    return gerentes, tipos, formas
+  except Exception:
+    return (
+        ["ADRIANO", "MATHEUS", "JULIANO"],
+        ["Contrato", "Ação de Mercado", "BL (Bateu Levou)"],
+        ["Pix", "TED/DOC", "Boleto", "Depósito"],
+    )
 
 
 gerentes_list, tipos_list, formas_list = carregar_parametros()
@@ -61,7 +75,7 @@ aba1, aba2, aba3 = st.tabs(
 )
 
 # ==========================================
-# ABA 1: LANÇAMENTO (Baseado no Print 1)
+# ABA 1: LANÇAMENTO
 # ==========================================
 with aba1:
   st.subheader("Novo lançamento (débito)")
@@ -108,7 +122,6 @@ with aba1:
             "Por favor, preencha todos os campos obrigatórios marcados com *."
         )
       else:
-        # Gerar ID único para o lançamento (ex: LAN-00001)
         existing_data = sheet_lancamentos.get_all_records()
         next_id = f"LAN-{len(existing_data) + 1:05d}"
 
@@ -131,20 +144,24 @@ with aba1:
         st.success(f"Lançamento {next_id} salvo com sucesso!")
 
 # ==========================================
-# ABA 2: BAIXA (Baseado no Print 2)
+# ABA 2: BAIXA (Pagamento)
 # ==========================================
 with aba2:
   st.subheader("Registrar pagamento")
 
-  # Buscar lançamentos existentes para escolha
-  df_lanc = pd.DataFrame(sheet_lancamentos.get_all_records())
+  try:
+    df_lanc = pd.DataFrame(sheet_lancamentos.get_all_records())
+  except Exception:
+    df_lanc = pd.DataFrame()
 
   with st.form("form_baixa", clear_on_submit=True):
     col1, col2 = st.columns(2)
 
     with col1:
       id_opcoes = (
-          df_lanc["id_lancamento"].tolist() if not df_lanc.empty else []
+          df_lanc["id_lancamento"].tolist()
+          if not df_lanc.empty and "id_lancamento" in df_lanc.columns
+          else []
       )
       id_lancamento = st.selectbox(
           "ID do lançamento *", options=["Selecione..."] + id_opcoes
@@ -184,38 +201,33 @@ with aba2:
         ]
         sheet_baixas.append_row(row_baixa)
 
-        # Atualizar status na aba de lançamentos (Lógica simples de exemplo)
-        # Você pode aprimorar somando os pagamentos daquele ID na aba Baixas
         cell = sheet_lancamentos.find(id_lancamento)
         if cell:
-          # Atualiza a coluna de status (assumindo que seja a última coluna, índice 13)
           sheet_lancamentos.update_cell(cell.row, 13, "Pago / Parcial")
 
         st.success(f"Pagamento registrado para o lançamento {id_lancamento}!")
 
 # ==========================================
-# ABA 3: DASHBOARD (Baseado no Print 4)
+# ABA 3: DASHBOARD
 # ==========================================
 with aba3:
   st.subheader("Painel de Indicadores")
 
-  if df_lanc.empty:
+  if df_lanc.empty or "valor_debito" not in df_lanc.columns:
     st.info("Ainda não há dados cadastrados na planilha.")
   else:
-    # Métricas Principais topo
-    total_debitos = (
-        df_lanc["valor_debito"].astype(float).sum()
-        if "valor_debito" in df_lanc.columns
-        else 0
-    )
+    total_debitos = df_lanc["valor_debito"].astype(float).sum()
 
-    # Carregar baixas para calcular total pago
-    df_baixas = pd.DataFrame(sheet_baixas.get_all_records())
-    total_pago = (
-        df_baixas["valor_pago"].astype(float).sum()
-        if not df_baixas.empty and "valor_pago" in df_baixas.columns
-        else 0
-    )
+    try:
+      df_baixas = pd.DataFrame(sheet_baixas.get_all_records())
+      total_pago = (
+          df_baixas["valor_pago"].astype(float).sum()
+          if not df_baixas.empty and "valor_pago" in df_baixas.columns
+          else 0.0
+      )
+    except Exception:
+      total_pago = 0.0
+
     saldo_aberto = total_debitos - total_pago
 
     col_m1, col_m2, col_m3 = st.columns(3)
@@ -225,7 +237,6 @@ with aba3:
 
     st.markdown("---")
 
-    # Gráficos e Tabelas Resumo
     col_g1, col_g2 = st.columns(2)
 
     with col_g1:
