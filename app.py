@@ -110,6 +110,16 @@ with aba1:
       tipo_comp = st.selectbox(
           "Tipo de compromisso *", ["Selecione..."] + tipos_list
       )
+
+      # Campo condicional exibido se for BL ou Ação
+      mes_bl_acao = ""
+      if tipo_comp != "Selecione..." and (
+          "bl" in tipo_comp.lower() or "ação" in tipo_comp.lower()
+      ):
+        mes_bl_acao = st.text_input(
+            "Mês do BL / Ação *", placeholder="Ex: Janeiro/2026 ou 01/2026"
+        )
+
       descricao = st.text_input("Descrição do compromisso *")
 
     with col2:
@@ -126,15 +136,21 @@ with aba1:
     submitted = st.form_submit_button("Salvar lançamento")
 
     if submitted:
+      # Validação se o campo condicional foi preenchido quando visível
+      precisa_mes = tipo_comp != "Selecione..." and (
+          "bl" in tipo_comp.lower() or "ação" in tipo_comp.lower()
+      )
+
       if (
           gerente_resp == "Selecione..."
           or tipo_comp == "Selecione..."
           or not codigo_pdv
           or not nome_cliente
           or not descricao
+          or (precisa_mes and not mes_bl_acao)
       ):
         st.error(
-            "Por favor, preencha todos os campos obrigatórios marcados com *."
+            "Por favor, preencha todos os campos obrigatórios marcados com * (incluindo o Mês do BL/Ação)."
         )
       else:
         existing_data = sheet_lancamentos.get_all_records()
@@ -145,7 +161,7 @@ with aba1:
             str(data_lancamento),
             gerente_resp,
             codigo_pdv,
-            cnpj_cpf,  # Atualizado para CNPJ/CPF
+            cnpj_cpf,
             nome_cliente,
             tipo_comp,
             contrato_campanha,
@@ -154,6 +170,7 @@ with aba1:
             float(valor_debito),
             observacoes,
             "Pendente",
+            mes_bl_acao,  # Salva a informação do mês do BL/Ação na planilha
         ]
         sheet_lancamentos.append_row(row)
         st.success(f"Lançamento {next_id} salvo e integrado com o Sheets!")
@@ -234,7 +251,7 @@ with aba3:
     st.info("Ainda não há dados cadastrados na planilha.")
   else:
     st.markdown("### 🔍 Filtros do Dashboard")
-    f_col1, f_col2, f_col3 = st.columns(3)
+    f_col1, f_col2, f_col3, f_col4 = st.columns(4)
 
     with f_col1:
       gerentes_disponiveis = (
@@ -264,6 +281,22 @@ with aba3:
           "Filtrar por Nome do Cliente", clientes_disponiveis
       )
 
+    with f_col4:
+      # Extraindo o mês/ano da data de lançamento para o filtro
+      if "data_lancamento" in df_lanc.columns:
+        df_lanc["mes_ano_lancamento"] = pd.to_datetime(
+            df_lanc["data_lancamento"], errors="coerce"
+        ).dt.strftime("%m/%Y")
+        meses_disponiveis = (
+            ["Todos"]
+            + df_lanc["mes_ano_lancamento"].dropna().unique().tolist()
+        )
+      else:
+        meses_disponiveis = ["Todos"]
+      filtro_mes = st.selectbox(
+          "Filtrar por Mês de Lançamento", meses_disponiveis
+      )
+
     # Aplicando os filtros no DataFrame
     df_filtrado = df_lanc.copy()
     if filtro_gerente != "Todos":
@@ -274,6 +307,10 @@ with aba3:
       ]
     if filtro_cliente != "Todos":
       df_filtrado = df_filtrado[df_filtrado["nome_cliente"] == filtro_cliente]
+    if filtro_mes != "Todos":
+      df_filtrado = df_filtrado[
+          df_filtrado["mes_ano_lancamento"] == filtro_mes
+      ]
 
     st.markdown("---")
 
